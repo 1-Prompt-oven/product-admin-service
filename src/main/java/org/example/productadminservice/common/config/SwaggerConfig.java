@@ -34,7 +34,7 @@ public class SwaggerConfig {
 
 	private Info apiInfo() {
 		return new Info()
-			.title("MSA - PRODUCT SERVICE 문서")
+			.title("MSA - PRODUCT-ADMIN-SERVICE 문서")
 			.description("00 API 테스트를 위한 Swagger UI")
 			.version("1.0.0");
 	}
