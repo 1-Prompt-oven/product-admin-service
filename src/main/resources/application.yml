@@ -1,8 +1,9 @@
+# ?? ??
 spring:
-  application:
-    name: product-admin-service
   profiles:
     active: prod
+  application:
+    name: product-admin-service
   servlet:
     multipart:
       max-file-size: 20MB
@@ -32,14 +33,12 @@ server:
   shutdown: graceful
 
 encrypted:
-  secret-key: ${ENCRYPTED_SECRET_KEY}
+  secret-key: PNFKTKKtI6PtL7UQHKTUG8tgWadm/Y2krrXUYlrjZ5Q=
 
 # local ??
 ---
 spring:
   config:
-    import:
-      - "optional:configserver:http://localhost:8888"
     activate:
       on-profile: local
   datasource:
@@ -57,19 +56,9 @@ spring:
     generate-ddl: true
   data:
     mongodb:
-      host: localhost
-      port: 27017
-      database: prompt_oven
-      username: root
-      password: root
-      authentication-database: admin
-      auto-index-creation: true
+      uri: mongodb://root:1234@mongodb:27017/product_service
   kafka:
     bootstrap-servers: localhost:9092,localhost:9093,localhost:9094
-  cloud:
-    config:
-      name: product-admin-service
-      fail-fast: false
 
 eureka:
   client:
@@ -90,8 +79,6 @@ spring:
   config:
     activate:
       on-profile: prod
-    import:
-      - "optional:configserver:http://config-server:8888"
   datasource:
     url: jdbc:mysql://mysql:3306/promptoven_product
     username: root
@@ -99,7 +86,7 @@ spring:
     driver-class-name: com.mysql.cj.jdbc.Driver
   jpa:
     hibernate:
-      ddl-auto: create  # prod ????? validate ??
+      ddl-auto: create
     show-sql: true
     properties:
       dialect: org.hibernate.dialect.MySQL8Dialect
@@ -108,7 +95,7 @@ spring:
       uri: mongodb://root:1234@mongodb:27017/product_service
       auto-index-creation: false  # prod ????? ?? ??? ?? ???? ??
   kafka:
-    bootstrap-servers: kafka:9092, kafka:9093, kafka:9094
+    bootstrap-servers: kafka-1:9092, kafka-2:9092, kafka-3:9092
   cloud:
     config:
       name: product-admin-service
@@ -125,10 +112,4 @@ eureka:
     instance-id: ${spring.application.name}:${spring.application.instance_id:${random.value}}
 
 server:
-  port: 8080  # ?? ????? ?? ?? ?? (Eureka ??)
-
-logging:
-  level:
-    org.springframework.jdbc: DEBUG
-    org.springframework.transaction: DEBUG
-    org.springframework.orm.jpa: DEBUG
+  port: 8080
