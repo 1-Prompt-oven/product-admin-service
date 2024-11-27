@@ -42,6 +42,9 @@ dependencies {
     // mongoDB
     implementation 'org.springframework.boot:spring-boot-starter-data-mongodb'
 
+    // csv parser
+    implementation 'com.opencsv:opencsv:5.9'
+
     compileOnly 'org.projectlombok:lombok'
     runtimeOnly 'com.mysql:mysql-connector-j'
     annotationProcessor 'org.projectlombok:lombok'
