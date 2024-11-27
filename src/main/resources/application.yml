@@ -1,4 +1,3 @@
-# ?? ??
 spring:
   profiles:
     active: local
@@ -13,6 +12,8 @@ spring:
       enabled: true
     jdbc:
       initialize-schema: always
+  config:
+    import: optional:configserver:http://localhost:8888  # Fixed config server import syntax
 
 springdoc:
   api-docs:
@@ -20,7 +21,7 @@ springdoc:
   swagger-ui:
     path: /swagger-ui.html
     display-request-duration: true
-  packages-to-scan: org.example.productadminservice  # ??? ??? ??
+  packages-to-scan: org.example.productadminservice
   default-produces-media-type: application/json
   default-consumes-media-type: application/json
   swagger-ui.operations-sorter: alpha
@@ -35,12 +36,10 @@ server:
 encrypted:
   secret-key: ${ENCRYPTED_SECRET_KEY}
 
-# local ??
+# Local Profile
 ---
 spring:
   config:
-    import:
-      - "optional:configserver:http://localhost:8888"
     activate:
       on-profile: local
   datasource:
@@ -69,7 +68,7 @@ spring:
     bootstrap-servers: localhost:9092,localhost:9093,localhost:9094
   cloud:
     config:
-      name: product-admin-service
+      enabled: true  # Explicitly enable config client
       fail-fast: false
 
 eureka:
@@ -83,16 +82,15 @@ eureka:
     instance-id: ${spring.application.name}:${spring.application.instance_id:${random.value}}
 
 server:
-  port: 8082  # random port for local development
+  port: 8082
 
-# prod ??
+# Production Profile
 ---
 spring:
   config:
     activate:
       on-profile: prod
-    import:
-      - "optional:configserver:http://config-server:8888"
+    import: optional:configserver:http://config-server:8888  # Fixed config server import syntax
   datasource:
     url: jdbc:mysql://mysql:3306/promptoven_product
     username: root
@@ -100,19 +98,19 @@ spring:
     driver-class-name: com.mysql.cj.jdbc.Driver
   jpa:
     hibernate:
-      ddl-auto: create  # prod ????? validate ??
+      ddl-auto: validate  # Changed to validate for production
     show-sql: true
     properties:
       dialect: org.hibernate.dialect.MySQL8Dialect
   data:
     mongodb:
       uri: mongodb://root:1234@mongodb:27017/product_service
-      auto-index-creation: false  # prod ????? ?? ??? ?? ???? ??
+      auto-index-creation: false
   kafka:
-    bootstrap-servers: kafka:9092, kafka:9093, kafka:9094
+    bootstrap-servers: kafka:9092,kafka:9093,kafka:9094
   cloud:
     config:
-      name: product-admin-service
+      enabled: true  # Explicitly enable config client
       fail-fast: false
 
 eureka:
@@ -126,10 +124,4 @@ eureka:
     instance-id: ${spring.application.name}:${spring.application.instance_id:${random.value}}
 
 server:
-  port: 8080  # ?? ????? ?? ?? ?? (Eureka ??)
-
-logging:
-  level:
-    org.springframework.jdbc: DEBUG
-    org.springframework.transaction: DEBUG
-    org.springframework.orm.jpa: DEBUG
+  port: 8080
