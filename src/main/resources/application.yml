@@ -40,9 +40,7 @@ spring:
       uri: mongodb://root:1234@mongodb:27017:27017/product-service
       auto-index-creation: true
   kafka:
-    text-bootstrap-servers: kafka-1:9092,kafka-2:9092,kafka-3:9092
-    consumer:
-      group-id: auth-service
+    bootstrap-servers: kafka-1:9092,kafka-2:9092,kafka-3:9092
   cloud:
     config:
       name: auth-service,eventTopic
@@ -83,6 +81,8 @@ spring:
       hibernate:
         format_sql: true
         dialect: org.hibernate.dialect.MySQL8Dialect
+  kafka:
+    bootstrap-servers: localhost:9092,localhost:9092,localhost:9092
   cloud:
     config:
       name: product-admin-service
