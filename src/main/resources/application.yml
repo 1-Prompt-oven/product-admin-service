@@ -25,7 +25,7 @@ spring:
     import:
       - "optional:configserver:http://config-server:8888"
   datasource:
-    url: jdbc:mysql://mysql:3306/auth
+    url: jdbc:mysql://mysql:3306/promptoven_product
     username: root
     password: 1234
     driver-class-name: com.mysql.cj.jdbc.Driver
@@ -46,7 +46,7 @@ spring:
     bootstrap-servers: kafka-1:9092,kafka-2:9092,kafka-3:9092
   cloud:
     config:
-      name: auth-service,eventTopic
+      name: product-admin-service
       fail-fast: false
 server:
   port: 8080
