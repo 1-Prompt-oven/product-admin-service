@@ -35,10 +35,10 @@ jobs:
           username: ubuntu
           key: ${{ secrets.EC2_KEY }}
           script: |
-            sudo docker rm -f product-service || true
+            sudo docker rm -f product-admin-service || true
             sudo docker pull ${{ secrets.DOCKERHUB_USERNAME }}/product-admin-service
-            mkdir /home/ubuntu/product-service
-            cd ~/product-service
+            mkdir /home/ubuntu/product-admin-service
+            cd ~/product-admin-service
             echo "SPRING_PROFILES_ACTIVE=prod" > .env
             sudo docker-compose up -d
             sudo docker image prune -f
