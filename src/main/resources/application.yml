@@ -1,4 +1,6 @@
 spring:
+  profiles:
+    active: local
   application:
     name: product-admin-service
   servlet:
