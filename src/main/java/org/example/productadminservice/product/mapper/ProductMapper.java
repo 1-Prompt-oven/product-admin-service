@@ -28,6 +28,7 @@ public class ProductMapper {
 			.llmVersionId(addProductRequestDto.getLlmVersionId())
 			.sells(0L)
 			.avgStar(0.0)
+			.reviewCount(0L)
 			.build();
 	}
 }
