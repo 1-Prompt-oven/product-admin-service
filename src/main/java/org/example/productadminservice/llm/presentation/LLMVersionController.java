@@ -18,7 +18,7 @@ import lombok.RequiredArgsConstructor;
 
 @RestController
 @RequiredArgsConstructor
-@RequestMapping("/v1/admin/llm/version")
+@RequestMapping("/v1/admin/product-admin/llm/version")
 @Tag(name = "LLM 버전 관리", description = "LLM 버전 관리 API")
 public class LLMVersionController {
 
