@@ -74,4 +74,6 @@ public class Product {
 	private Long sells;
 
 	private Long likeCount;
+
+	private Long reviewCount;
 }
