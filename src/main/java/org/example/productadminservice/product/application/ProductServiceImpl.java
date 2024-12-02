@@ -8,10 +8,16 @@ import java.io.Reader;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 import org.example.productadminservice.common.error.BaseException;
 import org.example.productadminservice.common.response.BaseResponseStatus;
 import org.example.productadminservice.common.utils.Encrypter;
+import org.example.productadminservice.product.domain.Product;
 import org.example.productadminservice.product.domain.ProductContent;
 import org.example.productadminservice.product.dto.in.AddProductRequestDto;
 import org.example.productadminservice.product.infrastructure.ProductRepository;
@@ -23,6 +29,7 @@ import org.springframework.web.multipart.MultipartFile;
 import com.opencsv.CSVReader;
 import com.opencsv.exceptions.CsvValidationException;
 
+import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -36,50 +43,135 @@ public class ProductServiceImpl implements ProductService {
 	private final Encrypter encrypter;
 	private final ProductMapper productMapper;
 
-	public void addProductFromFile(MultipartFile multipartFile) {
-		if (multipartFile.isEmpty()) {
-			throw new IllegalArgumentException("File is empty");
-		}
+	private static final int BATCH_SIZE = 1000; // 더 큰 배치 사이즈로 조정
+	private static final int THREAD_POOL_SIZE = 4; // 병렬 처리를 위한 스레드 풀 크기
+	private static final ExecutorService executorService =
+		Executors.newFixedThreadPool(THREAD_POOL_SIZE);
+	private int bulkInsertSize = 1000;
 
-		if (!multipartFile.getOriginalFilename().endsWith(".csv")) {
-			throw new IllegalArgumentException("File must be CSV format");
-		}
+	public void addProductFromFile(MultipartFile multipartFile) {
+		validateFile(multipartFile);
 
 		try (Reader reader = new BufferedReader(new InputStreamReader(multipartFile.getInputStream()));
 			 CSVReader csvReader = new CSVReader(reader)) {
 
 			String[] headers = csvReader.readNext();
-			int lineNumber = 1;
-			int baseNumber = 1;  // 기본 번호
+			List<Future<List<Product>>> futures = new ArrayList<>();
+			List<String[]> batchLines = new ArrayList<>();
+			int baseNumber = 1;
 
+			// CSV 파일을 배치로 읽어서 병렬 처리
 			String[] line;
 			while ((line = csvReader.readNext()) != null && !isEmptyLine(line)) {
-				lineNumber++;
-				String baseName = line[4];  // 원본 productName
-				String[] baseLine = line.clone();
+				batchLines.add(line);
 
-				// 각 라인당 100개의 데이터 생성
-				for (int i = 0; i < 100; i++) {
-					try {
-						String[] newLine = baseLine.clone();
-						// productUuid 수정
-						newLine[0] = generateNewProductUuid(baseLine[0], baseNumber + i);
-						// productName 수정 (원본 이름 + 번호)
-						newLine[4] = String.format("%s_%d", baseName, baseNumber + i);
-
-						AddProductRequestDto productDto = parseProductLine(newLine, lineNumber);
-						addProduct(productDto);
-
-						log.debug("Created product {}: {}", baseNumber + i, newLine[4]);
-					} catch (Exception e) {
-						log.error("Error processing duplicate {} of line {}: {}",
-							i + 1, lineNumber, e.getMessage());
-					}
+				if (batchLines.size() >= BATCH_SIZE) {
+					futures.add(processBatch(batchLines, baseNumber));
+					baseNumber += (batchLines.size() * 100);
+					batchLines = new ArrayList<>();
 				}
-				baseNumber += 100;  // 다음 라인을 위해 번호 증가
 			}
-		} catch (IOException | CsvValidationException e) {
+
+			// 남은 라인 처리
+			if (!batchLines.isEmpty()) {
+				futures.add(processBatch(batchLines, baseNumber));
+			}
+
+			// 모든 배치 처리 완료 대기 및 결과 저장
+			saveAllProducts(futures);
+
+		} catch (Exception e) {
+			log.error("Failed to process CSV file", e);
 			throw new RuntimeException("Failed to process CSV file: " + e.getMessage(), e);
+		}
+	}
+
+	private Future<List<Product>> processBatch(List<String[]> lines, int startingBaseNumber) {
+		return executorService.submit(() -> {
+			List<Product> products = new ArrayList<>();
+			int currentBaseNumber = startingBaseNumber;
+
+			for (String[] baseLine : lines) {
+				String baseName = baseLine[4];
+
+				// 프롬프트 암호화를 배치로 처리하기 위한 준비
+				List<String> prompts = new ArrayList<>();
+				List<AddProductRequestDto> dtos = new ArrayList<>();
+
+				// 각 라인에 대해 100개 데이터 생성 준비
+				for (int i = 0; i < 100; i++) {
+					String[] newLine = baseLine.clone();
+					newLine[0] = generateNewProductUuid(baseLine[0], currentBaseNumber + i);
+					newLine[4] = String.format("%s_%d", baseName, currentBaseNumber + i);
+
+					AddProductRequestDto dto = parseProductLine(newLine, currentBaseNumber + i);
+					dtos.add(dto);
+					prompts.add(dto.getPrompt());
+				}
+
+				// 프롬프트 일괄 암호화
+				List<String> encryptedPrompts = encryptPromptsBatch(prompts);
+
+				// Product 엔티티 생성
+				for (int i = 0; i < dtos.size(); i++) {
+					products.add(productMapper.createProduct(dtos.get(i), encryptedPrompts.get(i)));
+				}
+
+				currentBaseNumber += 100;
+			}
+
+			return products;
+		});
+	}
+
+	private List<String> encryptPromptsBatch(List<String> prompts) {
+		return prompts.parallelStream()
+			.map(prompt -> encrypter.encrypt(prompt)
+				.orElseThrow(() -> new BaseException(BaseResponseStatus.ENCRYPTION_ERROR)))
+			.collect(Collectors.toList());
+	}
+
+	private void saveAllProducts(List<Future<List<Product>>> futures) {
+		try {
+			List<Product> allProducts = new ArrayList<>();
+
+			for (Future<List<Product>> future : futures) {
+				allProducts.addAll(future.get());
+
+				// bulkInsertSize 단위로 데이터베이스에 저장
+				if (allProducts.size() >= bulkInsertSize) {
+					productRepository.saveAll(allProducts);
+					allProducts.clear();
+				}
+			}
+
+			// 남은 제품들 저장
+			if (!allProducts.isEmpty()) {
+				productRepository.saveAll(allProducts);
+			}
+		} catch (Exception e) {
+			throw new RuntimeException("Failed to save products", e);
+		}
+	}
+
+	private void validateFile(MultipartFile file) {
+		if (file.isEmpty()) {
+			throw new IllegalArgumentException("File is empty");
+		}
+		if (!file.getOriginalFilename().endsWith(".csv")) {
+			throw new IllegalArgumentException("File must be CSV format");
+		}
+	}
+
+	@PreDestroy
+	public void cleanup() {
+		executorService.shutdown();
+		try {
+			if (!executorService.awaitTermination(800, TimeUnit.MILLISECONDS)) {
+				executorService.shutdownNow();
+			}
+		} catch (InterruptedException e) {
+			executorService.shutdownNow();
 		}
 	}
 
@@ -233,17 +325,6 @@ public class ProductServiceImpl implements ProductService {
 			throw new IllegalArgumentException(
 				String.format("Line %d: Invalid %s format: %s", lineNumber, fieldName, value));
 		}
-	}
-
-	private void addProduct(AddProductRequestDto addProductRequestDto) {
-		String encryptedPrompt = encrypter.encrypt(addProductRequestDto.getPrompt())
-			.orElseThrow(() -> new BaseException(BaseResponseStatus.ENCRYPTION_ERROR));
-
-		if (addProductRequestDto.getContents() == null || addProductRequestDto.getContents().isEmpty()) {
-			log.warn("Product {} has no contents", addProductRequestDto.getProductUuid());
-		}
-
-		productRepository.save(productMapper.createProduct(addProductRequestDto, encryptedPrompt));
 	}
 
 
