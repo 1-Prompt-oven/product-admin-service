@@ -49,6 +49,10 @@ dependencies {
     // csv parser
     implementation 'com.opencsv:opencsv:5.9'
 
+    // for monitoring
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
+    implementation 'io.micrometer:micrometer-registry-prometheus'
+
     compileOnly 'org.projectlombok:lombok'
     runtimeOnly 'com.mysql:mysql-connector-j'
     annotationProcessor 'org.projectlombok:lombok'
