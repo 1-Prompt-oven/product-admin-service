@@ -28,4 +28,7 @@ public class AddProductRequestDto {
 	private float discountRate;
 	private Long llmVersionId;
 	private boolean deleted;
+	private boolean temporaryEnrolled;
+	private Long sells;
+	private Long likeCount;
 }

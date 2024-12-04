@@ -29,6 +29,8 @@ public class ProductMapper {
 			.sells(0L)
 			.avgStar(0.0)
 			.reviewCount(0L)
+			.likeCount(0L)
+			.temporaryEnrolled(addProductRequestDto.isTemporaryEnrolled())
 			.build();
 	}
 }

@@ -76,4 +76,6 @@ public class Product {
 	private Long likeCount;
 
 	private Long reviewCount;
+
+	private boolean temporaryEnrolled;
 }

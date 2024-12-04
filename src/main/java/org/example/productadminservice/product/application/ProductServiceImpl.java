@@ -250,6 +250,9 @@ public class ProductServiceImpl implements ProductService {
 				.description(parseStringField(line[7], "description", lineNumber))
 				.llmId(parseLongField(line[8], "llmId", lineNumber))
 				.deleted(false)
+				.temporaryEnrolled(false)
+				.sells(0L)
+				.likeCount(0L)
 				.contents(contents)
 				.build();
 		} catch (Exception e) {
