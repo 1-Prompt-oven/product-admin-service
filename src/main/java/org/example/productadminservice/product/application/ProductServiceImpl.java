@@ -1,13 +1,13 @@
 package org.example.productadminservice.product.application;
 
 import java.io.BufferedReader;
-import java.io.FileReader;
-import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.Reader;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
+import java.util.Random;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -27,7 +27,6 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import com.opencsv.CSVReader;
-import com.opencsv.exceptions.CsvValidationException;
 
 import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
@@ -42,13 +41,18 @@ public class ProductServiceImpl implements ProductService {
 	private final ProductRepository productRepository;
 	private final Encrypter encrypter;
 	private final ProductMapper productMapper;
+	private final Random random = new Random();
 
-	private static final int BATCH_SIZE = 1000; // 더 큰 배치 사이즈로 조정
-	private static final int THREAD_POOL_SIZE = 4; // 병렬 처리를 위한 스레드 풀 크기
-	private static final ExecutorService executorService =
-		Executors.newFixedThreadPool(THREAD_POOL_SIZE);
+	private static final int BATCH_SIZE = 1000;
+	private static final int THREAD_POOL_SIZE = 4;
+	private static final int MAX_PRODUCTS_PER_BASE = 100;
+	private static final int MIN_PRICE = 500;
+	private static final int MAX_PRICE = 5000;
+	private static final int PRICE_UNIT = 500;
+	private static final ExecutorService executorService = Executors.newFixedThreadPool(THREAD_POOL_SIZE);
 	private int bulkInsertSize = 1000;
 
+	@Override
 	public void addProductFromFile(MultipartFile multipartFile) {
 		validateFile(multipartFile);
 
@@ -57,27 +61,34 @@ public class ProductServiceImpl implements ProductService {
 
 			String[] headers = csvReader.readNext();
 			List<Future<List<Product>>> futures = new ArrayList<>();
+			List<String[]> allLines = new ArrayList<>();
+
+			// 모든 라인을 먼저 읽어옴
+			String[] line;
+			while ((line = csvReader.readNext()) != null && !isEmptyLine(line)) {
+				allLines.add(line);
+			}
+
+			// 라인들을 섞어서 처리
+			Collections.shuffle(allLines);
+
 			List<String[]> batchLines = new ArrayList<>();
 			int baseNumber = 1;
 
-			// CSV 파일을 배치로 읽어서 병렬 처리
-			String[] line;
-			while ((line = csvReader.readNext()) != null && !isEmptyLine(line)) {
-				batchLines.add(line);
+			for (String[] currentLine : allLines) {
+				batchLines.add(currentLine);
 
 				if (batchLines.size() >= BATCH_SIZE) {
 					futures.add(processBatch(batchLines, baseNumber));
-					baseNumber += (batchLines.size() * 100);
+					baseNumber += (batchLines.size() * MAX_PRODUCTS_PER_BASE);
 					batchLines = new ArrayList<>();
 				}
 			}
 
-			// 남은 라인 처리
 			if (!batchLines.isEmpty()) {
 				futures.add(processBatch(batchLines, baseNumber));
 			}
 
-			// 모든 배치 처리 완료 대기 및 결과 저장
 			saveAllProducts(futures);
 
 		} catch (Exception e) {
@@ -93,42 +104,83 @@ public class ProductServiceImpl implements ProductService {
 
 			for (String[] baseLine : lines) {
 				String baseName = baseLine[4];
-
-				// 프롬프트 암호화를 배치로 처리하기 위한 준비
 				List<String> prompts = new ArrayList<>();
 				List<AddProductRequestDto> dtos = new ArrayList<>();
 
-				// 각 라인에 대해 100개 데이터 생성 준비
-				for (int i = 0; i < 100; i++) {
+				int productsToCreate = 50 + random.nextInt(51);
+
+				for (int i = 0; i < productsToCreate; i++) {
 					String[] newLine = baseLine.clone();
 					newLine[0] = generateNewProductUuid(baseLine[0], currentBaseNumber + i);
-					newLine[4] = String.format("%s_%d", baseName, currentBaseNumber + i);
+					newLine[4] = generateVariantProductName(baseName, currentBaseNumber + i);
+					newLine[5] = String.valueOf(generateRandomPrice());
 
 					AddProductRequestDto dto = parseProductLine(newLine, currentBaseNumber + i);
 					dtos.add(dto);
 					prompts.add(dto.getPrompt());
 				}
 
-				// 프롬프트 일괄 암호화
 				List<String> encryptedPrompts = encryptPromptsBatch(prompts);
 
-				// Product 엔티티 생성
 				for (int i = 0; i < dtos.size(); i++) {
 					products.add(productMapper.createProduct(dtos.get(i), encryptedPrompts.get(i)));
 				}
 
-				currentBaseNumber += 100;
+				currentBaseNumber += MAX_PRODUCTS_PER_BASE;
 			}
 
+			Collections.shuffle(products);
 			return products;
 		});
 	}
 
-	private List<String> encryptPromptsBatch(List<String> prompts) {
-		return prompts.parallelStream()
-			.map(prompt -> encrypter.encrypt(prompt)
-				.orElseThrow(() -> new BaseException(BaseResponseStatus.ENCRYPTION_ERROR)))
-			.collect(Collectors.toList());
+	private String generateVariantProductName(String baseName, int number) {
+		String[] purposes = {
+			"Beginner", "Professional", "Advanced", "Basic", "Universal",
+			"Optimized", "Custom", "Template", "Enhanced", "Standard"
+		};
+
+		String[] characteristics = {
+			"Detailed", "Creative", "Practical", "Efficient", "Intuitive",
+			"Expandable", "Integrated", "Structured", "Premium", "Quality"
+		};
+
+		String[] tasks = {
+			"Story Generation", "Content Creation", "Analysis", "Translation",
+			"Summarization", "Writing", "Research", "Conversation",
+			"Description", "Documentation"
+		};
+
+		String purpose = purposes[random.nextInt(purposes.length)];
+		String characteristic = characteristics[random.nextInt(characteristics.length)];
+
+		StringBuilder nameBuilder = new StringBuilder(baseName.trim());
+		nameBuilder.append(" - ")
+			.append(purpose)
+			.append(" ")
+			.append(characteristic);
+
+		if (random.nextDouble() < 0.3) {
+			String task = tasks[random.nextInt(tasks.length)];
+			nameBuilder.append(" for ").append(task);
+		}
+
+		return nameBuilder.toString();
+	}
+
+	private double generateRandomPrice() {
+		int priceSteps = (MAX_PRICE - MIN_PRICE) / PRICE_UNIT;
+		int randomStep = random.nextInt(priceSteps + 1);
+		return MIN_PRICE + (randomStep * PRICE_UNIT);
+	}
+
+	private void validateFile(MultipartFile file) {
+		if (file.isEmpty()) {
+			throw new IllegalArgumentException("File is empty");
+		}
+		if (!file.getOriginalFilename().endsWith(".csv")) {
+			throw new IllegalArgumentException("File must be CSV format");
+		}
 	}
 
 	private void saveAllProducts(List<Future<List<Product>>> futures) {
@@ -138,28 +190,17 @@ public class ProductServiceImpl implements ProductService {
 			for (Future<List<Product>> future : futures) {
 				allProducts.addAll(future.get());
 
-				// bulkInsertSize 단위로 데이터베이스에 저장
 				if (allProducts.size() >= bulkInsertSize) {
 					productRepository.saveAll(allProducts);
 					allProducts.clear();
 				}
 			}
 
-			// 남은 제품들 저장
 			if (!allProducts.isEmpty()) {
 				productRepository.saveAll(allProducts);
 			}
 		} catch (Exception e) {
 			throw new RuntimeException("Failed to save products", e);
-		}
-	}
-
-	private void validateFile(MultipartFile file) {
-		if (file.isEmpty()) {
-			throw new IllegalArgumentException("File is empty");
-		}
-		if (!file.getOriginalFilename().endsWith(".csv")) {
-			throw new IllegalArgumentException("File must be CSV format");
 		}
 	}
 
@@ -176,7 +217,6 @@ public class ProductServiceImpl implements ProductService {
 	}
 
 	private String generateNewProductUuid(String baseUuid, int number) {
-		// PR-000001 형식의 UUID를 새로운 번호로 생성
 		String prefix = baseUuid.substring(0, baseUuid.lastIndexOf("-") + 1);
 		return String.format("%s%06d", prefix, number);
 	}
@@ -184,6 +224,13 @@ public class ProductServiceImpl implements ProductService {
 	private boolean isEmptyLine(String[] line) {
 		return line == null || line.length == 0 ||
 			Arrays.stream(line).allMatch(field -> field == null || field.trim().isEmpty());
+	}
+
+	private List<String> encryptPromptsBatch(List<String> prompts) {
+		return prompts.parallelStream()
+			.map(prompt -> encrypter.encrypt(prompt)
+				.orElseThrow(() -> new BaseException(BaseResponseStatus.ENCRYPTION_ERROR)))
+			.collect(Collectors.toList());
 	}
 
 	private AddProductRequestDto parseProductLine(String[] line, int lineNumber) {
@@ -211,10 +258,12 @@ public class ProductServiceImpl implements ProductService {
 				.append("Cause: ").append(e.getMessage()).append("\n")
 				.append("Column values:\n");
 
-			String[] columnNames = {"productUuid", "sellerUuid", "topCategoryUuid", "subCategoryUuid",
+			String[] columnNames = {
+				"productUuid", "sellerUuid", "topCategoryUuid", "subCategoryUuid",
 				"productName", "price", "prompt", "description", "llmId", "deleted",
 				"contentUrl1", "contentOrder1", "sampleValue1",
-				"contentUrl2", "contentOrder2", "sampleValue2"};
+				"contentUrl2", "contentOrder2", "sampleValue2"
+			};
 
 			for (int i = 0; i < Math.min(line.length, columnNames.length); i++) {
 				errorMsg.append(columnNames[i]).append(": ").append(line[i]).append("\n");
@@ -225,7 +274,7 @@ public class ProductServiceImpl implements ProductService {
 	}
 
 	private void validateLineLength(String[] line, int lineNumber) {
-		int minimumLength = 10; // 기본 필드의 최소 길이
+		int minimumLength = 10;
 		if (line.length < minimumLength) {
 			throw new IllegalArgumentException(
 				String.format("Line %d: Invalid number of columns. Expected at least %d, but got %d",
@@ -266,7 +315,6 @@ public class ProductServiceImpl implements ProductService {
 			}
 		}
 
-		// contents가 비어있으면 로그 출력
 		if (contents.isEmpty()) {
 			log.warn("No valid contents found for line {}", lineNumber);
 		}
@@ -326,6 +374,4 @@ public class ProductServiceImpl implements ProductService {
 				String.format("Line %d: Invalid %s format: %s", lineNumber, fieldName, value));
 		}
 	}
-
-
 }
