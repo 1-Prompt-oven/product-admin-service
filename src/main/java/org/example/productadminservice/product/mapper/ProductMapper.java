@@ -12,7 +12,7 @@ public class ProductMapper {
 
 		return Product.builder()
 			.sellerUuid(addProductRequestDto.getSellerUuid())
-			.productUuid(UuidGenerator.generateProductUuid())
+			.productUuid(addProductRequestDto.getProductUuid())
 			.productName(addProductRequestDto.getProductName())
 			.price(addProductRequestDto.getPrice())
 			.prompt(encryptedPrompt)

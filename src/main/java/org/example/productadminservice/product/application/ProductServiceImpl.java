@@ -17,6 +17,7 @@ import java.util.stream.Collectors;
 import org.example.productadminservice.common.error.BaseException;
 import org.example.productadminservice.common.response.BaseResponseStatus;
 import org.example.productadminservice.common.utils.Encrypter;
+import org.example.productadminservice.common.utils.UuidGenerator;
 import org.example.productadminservice.product.domain.Product;
 import org.example.productadminservice.product.domain.ProductContent;
 import org.example.productadminservice.product.dto.in.AddProductRequestDto;
@@ -63,13 +64,11 @@ public class ProductServiceImpl implements ProductService {
 			List<Future<List<Product>>> futures = new ArrayList<>();
 			List<String[]> allLines = new ArrayList<>();
 
-			// 모든 라인을 먼저 읽어옴
 			String[] line;
 			while ((line = csvReader.readNext()) != null && !isEmptyLine(line)) {
 				allLines.add(line);
 			}
 
-			// 라인들을 섞어서 처리
 			Collections.shuffle(allLines);
 
 			List<String[]> batchLines = new ArrayList<>();
@@ -103,15 +102,40 @@ public class ProductServiceImpl implements ProductService {
 			int currentBaseNumber = startingBaseNumber;
 
 			for (String[] baseLine : lines) {
+				// 1. 원본 데이터를 정확히 그대로 생성
+				AddProductRequestDto originalDto = AddProductRequestDto.builder()
+					.productUuid(baseLine[0])  // 원본 productUuid 그대로 사용
+					.sellerUuid(baseLine[1])   // 원본 sellerUuid
+					.topCategoryUuid(baseLine[2])
+					.subCategoryUuid(baseLine[3])
+					.productName(baseLine[4])   // 원본 상품명
+					.price(Double.parseDouble(baseLine[5]))  // 원본 가격
+					.prompt(baseLine[6])        // 원본 prompt
+					.description(baseLine[7])
+					.llmId(Long.parseLong(baseLine[8]))
+					.deleted(false)
+					.temporaryEnrolled(false)
+					.sells(0L)
+					.likeCount(0L)
+					.contents(parseProductContents(baseLine, -1))
+					.build();
+
+				String encryptedOriginalPrompt = encrypter.encrypt(originalDto.getPrompt())
+					.orElseThrow(() -> new BaseException(BaseResponseStatus.ENCRYPTION_ERROR));
+				products.add(productMapper.createProduct(originalDto, encryptedOriginalPrompt));
+
+				// 2. 추가 변형 데이터들 생성
 				String baseName = baseLine[4];
+				String baseSellerUuid = baseLine[1];
 				List<String> prompts = new ArrayList<>();
 				List<AddProductRequestDto> dtos = new ArrayList<>();
 
-				int productsToCreate = 50 + random.nextInt(51);
+				int productsToCreate = 49 + random.nextInt(51);  // 49~99개 추가 생성
 
 				for (int i = 0; i < productsToCreate; i++) {
 					String[] newLine = baseLine.clone();
-					newLine[0] = generateNewProductUuid(baseLine[0], currentBaseNumber + i);
+					newLine[0] = UuidGenerator.generateProductUuid();
+					newLine[1] = baseSellerUuid;
 					newLine[4] = generateVariantProductName(baseName, currentBaseNumber + i);
 					newLine[5] = String.valueOf(generateRandomPrice());
 
@@ -240,14 +264,14 @@ public class ProductServiceImpl implements ProductService {
 			List<ProductContent> contents = parseProductContents(line, lineNumber);
 
 			return AddProductRequestDto.builder()
-				.productUuid(parseStringField(line[0], "productUuid", lineNumber))
-				.sellerUuid(parseStringField(line[1], "sellerUuid", lineNumber))
-				.topCategoryUuid(parseStringField(line[2], "topCategoryUuid", lineNumber))
-				.subCategoryUuid(parseStringField(line[3], "subCategoryUuid", lineNumber))
-				.productName(parseStringField(line[4], "productName", lineNumber))
+				.productUuid(line[0])
+				.sellerUuid(line[1])
+				.topCategoryUuid(line[2])
+				.subCategoryUuid(line[3])
+				.productName(line[4])
 				.price(parseDoubleField(line[5], "price", lineNumber))
-				.prompt(parseStringField(line[6], "prompt", lineNumber))
-				.description(parseStringField(line[7], "description", lineNumber))
+				.prompt(line[6])
+				.description(line[7])
 				.llmId(parseLongField(line[8], "llmId", lineNumber))
 				.deleted(false)
 				.temporaryEnrolled(false)
@@ -288,7 +312,6 @@ public class ProductServiceImpl implements ProductService {
 	private List<ProductContent> parseProductContents(String[] line, int lineNumber) {
 		List<ProductContent> contents = new ArrayList<>();
 
-		// 첫 번째 content set
 		if (line.length > 12 && isValidContentSet(line[10], line[11], line[12])) {
 			try {
 				ProductContent content1 = ProductContent.builder()
@@ -303,7 +326,6 @@ public class ProductServiceImpl implements ProductService {
 			}
 		}
 
-		// 두 번째 content set
 		if (line.length > 15 && isValidContentSet(line[13], line[14], line[15])) {
 			try {
 				ProductContent content2 = ProductContent.builder()
@@ -329,14 +351,6 @@ public class ProductServiceImpl implements ProductService {
 		return url != null && !url.trim().isEmpty() &&
 			order != null && !order.trim().isEmpty() &&
 			sampleValue != null && !sampleValue.trim().isEmpty();
-	}
-
-	private String parseStringField(String value, String fieldName, int lineNumber) {
-		if (value == null || value.trim().isEmpty()) {
-			throw new IllegalArgumentException(
-				String.format("Line %d: %s cannot be empty", lineNumber, fieldName));
-		}
-		return value.trim();
 	}
 
 	private Double parseDoubleField(String value, String fieldName, int lineNumber) {
